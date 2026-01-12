@@ -1,7 +1,6 @@
 """API routes for the translation service."""
 import logging
-import threading
-from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse
 
 from app.models import Job, JobStatus, job_store
@@ -13,28 +12,16 @@ from app.services.file_handler import (
     get_job_directory,
     generate_job_id,
 )
-from app.config import REDIS_URL
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-def _check_redis_available() -> bool:
-    """Check if Redis is available for Celery."""
+def _process_translation(job_id: str, file_type: str):
+    """Process translation synchronously."""
     try:
-        import redis
-        r = redis.from_url(REDIS_URL, socket_connect_timeout=1)
-        r.ping()
-        return True
-    except Exception:
-        return False
-
-
-def _process_translation_sync(job_id: str, file_type: str):
-    """Process translation synchronously (without Celery)."""
-    try:
-        logger.info(f"Starting sync translation for job {job_id}")
+        logger.info(f"Starting translation for job {job_id}")
         
         job_dir = get_job_directory(job_id)
         output_path = get_output_path(job_id)
@@ -75,10 +62,9 @@ def _process_translation_sync(job_id: str, file_type: str):
             else:
                 translated_paragraphs.append(para)
             
-            # Update progress
+            # Update progress (30% to 80%)
             progress = 30 + int((i + 1) / total * 50) if total > 0 else 80
-            if (i + 1) % 5 == 0 or i == total - 1:
-                job_store.update(job_id, step=f"Translating ({i+1}/{total})", percent=progress)
+            job_store.update(job_id, step=f"Translating ({i+1}/{total})", percent=progress)
         
         logger.info(f"Job {job_id}: Translated {len(translated_paragraphs)} paragraphs")
         
@@ -87,8 +73,6 @@ def _process_translation_sync(job_id: str, file_type: str):
         
         from app.services.render.pdf_render import render_pdf
         render_pdf(translated_paragraphs, output_path)
-        
-        job_store.update(job_id, step="Finalizing", percent=95)
         
         # Done!
         job_store.update(job_id, status=JobStatus.DONE, step="Done", percent=100)
@@ -102,20 +86,12 @@ def _process_translation_sync(job_id: str, file_type: str):
 @router.get("/health")
 async def api_health():
     """API health check."""
-    redis_ok = _check_redis_available()
-    return {
-        "status": "ok",
-        "redis": "connected" if redis_ok else "unavailable (using sync mode)",
-    }
+    return {"status": "ok"}
 
 
 @router.post("/upload")
-async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    """Upload a file for translation.
-    
-    Returns job_id to track translation progress.
-    Uses Celery if Redis available, otherwise processes synchronously.
-    """
+async def upload_file(file: UploadFile = File(...)):
+    """Upload a file for translation. Processes immediately."""
     # Validate file
     is_valid, error = validate_file(file.filename, file.size)
     if not is_valid:
@@ -145,23 +121,10 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
         percent=0,
     )
     job_store.create(job)
-    logger.info(f"Job {job_id} created successfully")
+    logger.info(f"Job {job_id} created, starting translation...")
     
-    # Try Celery first, fall back to sync processing
-    redis_available = _check_redis_available()
-    
-    if redis_available:
-        try:
-            from app.workers.tasks import translate_document_task
-            translate_document_task.delay(job_id, file_type)
-            logger.info(f"Translation task queued via Celery for job {job_id}")
-        except Exception as e:
-            logger.warning(f"Celery failed: {e}, falling back to sync mode")
-            background_tasks.add_task(_process_translation_sync, job_id, file_type)
-    else:
-        # No Redis - use FastAPI background tasks (synchronous in background thread)
-        logger.info(f"Redis unavailable, using sync mode for job {job_id}")
-        background_tasks.add_task(_process_translation_sync, job_id, file_type)
+    # Process immediately (synchronous)
+    _process_translation(job_id, file_type)
     
     return {"job_id": job_id}
 
@@ -174,7 +137,7 @@ async def get_job_status(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     
     return {
-        "status": job.status.value,
+        "status": job.status.value if hasattr(job.status, 'value') else job.status,
         "step": job.step,
         "percent": job.percent,
         "error": job.error,
@@ -188,10 +151,11 @@ async def download_translated_file(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    if job.status != JobStatus.DONE:
+    job_status = job.status.value if hasattr(job.status, 'value') else job.status
+    if job_status != "done":
         raise HTTPException(
             status_code=400, 
-            detail=f"Translation not complete. Current status: {job.status.value}"
+            detail=f"Translation not complete. Current status: {job_status}"
         )
     
     output_path = get_output_path(job_id)

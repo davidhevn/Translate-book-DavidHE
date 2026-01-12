@@ -60,8 +60,15 @@ async def upload_file(file: UploadFile = File(...)):
     job_store.create(job)
     logger.info(f"Job {job_id} created successfully")
     
-    # TODO: In Slice 3, we'll trigger Celery task here
-    # For now, job stays in QUEUED status
+    # Trigger async translation task
+    try:
+        from app.workers.tasks import translate_document_task
+        translate_document_task.delay(job_id, file_type)
+        logger.info(f"Translation task queued for job {job_id}")
+    except Exception as e:
+        # If Celery/Redis unavailable, log warning but don't fail upload
+        # Job will stay in QUEUED state
+        logger.warning(f"Failed to queue translation task: {e}. Job {job_id} will need manual processing.")
     
     return {"job_id": job_id}
 

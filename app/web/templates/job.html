@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Translation Progress - Book Translator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-2xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">📚 Book Translator</h1>
+            <p class="text-gray-600">Translation in Progress</p>
+        </header>
+
+        <main class="bg-white rounded-lg shadow-md p-6">
+            <div id="statusContainer" class="space-y-6">
+                <div class="text-center">
+                    <p class="text-sm text-gray-500 mb-2">Job ID: <span id="jobIdDisplay" class="font-mono">{{ job_id }}</span></p>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="space-y-2">
+                    <div class="flex justify-between text-sm">
+                        <span id="stepText" class="text-gray-700 font-medium">Initializing...</span>
+                        <span id="percentText" class="text-gray-500">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                        <div id="progressBar" class="bg-blue-600 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Status Steps -->
+                <div id="stepsContainer" class="space-y-3">
+                    <div class="step flex items-center gap-3" data-step="queued">
+                        <span class="step-icon w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs">1</span>
+                        <span class="text-gray-600">Queued</span>
+                    </div>
+                    <div class="step flex items-center gap-3" data-step="extracting">
+                        <span class="step-icon w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs">2</span>
+                        <span class="text-gray-600">Extracting text</span>
+                    </div>
+                    <div class="step flex items-center gap-3" data-step="translating">
+                        <span class="step-icon w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs">3</span>
+                        <span class="text-gray-600">Translating</span>
+                    </div>
+                    <div class="step flex items-center gap-3" data-step="rendering">
+                        <span class="step-icon w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs">4</span>
+                        <span class="text-gray-600">Rebuilding PDF</span>
+                    </div>
+                    <div class="step flex items-center gap-3" data-step="done">
+                        <span class="step-icon w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs">5</span>
+                        <span class="text-gray-600">Done</span>
+                    </div>
+                </div>
+
+                <!-- Download Button (hidden initially) -->
+                <div id="downloadContainer" class="hidden">
+                    <a 
+                        id="downloadBtn"
+                        href="#"
+                        class="block w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 text-center font-medium transition-colors"
+                    >
+                        📥 Download Translated PDF
+                    </a>
+                </div>
+
+                <!-- Error Message -->
+                <div id="errorContainer" class="hidden p-4 bg-red-50 border border-red-200 rounded-md">
+                    <p class="text-red-700 font-medium">Translation Failed</p>
+                    <p id="errorText" class="text-red-600 text-sm mt-1"></p>
+                </div>
+            </div>
+
+            <div class="mt-6 text-center">
+                <a href="/" class="text-blue-600 hover:underline text-sm">← Translate another document</a>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const jobId = "{{ job_id }}";
+        const progressBar = document.getElementById('progressBar');
+        const stepText = document.getElementById('stepText');
+        const percentText = document.getElementById('percentText');
+        const downloadContainer = document.getElementById('downloadContainer');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const errorContainer = document.getElementById('errorContainer');
+        const errorText = document.getElementById('errorText');
+
+        const stepOrder = ['queued', 'extracting', 'translating', 'rendering', 'done'];
+        
+        function updateStepIndicators(currentStep) {
+            const currentIndex = stepOrder.indexOf(currentStep.toLowerCase());
+            document.querySelectorAll('.step').forEach((stepEl, index) => {
+                const icon = stepEl.querySelector('.step-icon');
+                if (index < currentIndex) {
+                    icon.classList.remove('bg-gray-200', 'bg-blue-600');
+                    icon.classList.add('bg-green-500', 'text-white');
+                    icon.innerHTML = '✓';
+                } else if (index === currentIndex) {
+                    icon.classList.remove('bg-gray-200', 'bg-green-500');
+                    icon.classList.add('bg-blue-600', 'text-white');
+                } else {
+                    icon.classList.remove('bg-blue-600', 'bg-green-500', 'text-white');
+                    icon.classList.add('bg-gray-200');
+                }
+            });
+        }
+
+        async function pollStatus() {
+            try {
+                const response = await fetch(`/api/jobs/${jobId}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to get status');
+                }
+
+                // Update UI
+                const percent = data.percent || 0;
+                progressBar.style.width = `${percent}%`;
+                percentText.textContent = `${percent}%`;
+                stepText.textContent = data.step || 'Processing...';
+                
+                updateStepIndicators(data.step || 'queued');
+
+                if (data.status === 'done') {
+                    progressBar.classList.remove('bg-blue-600');
+                    progressBar.classList.add('bg-green-500');
+                    downloadBtn.href = `/api/download/${jobId}`;
+                    downloadContainer.classList.remove('hidden');
+                    return; // Stop polling
+                }
+
+                if (data.status === 'error') {
+                    progressBar.classList.remove('bg-blue-600');
+                    progressBar.classList.add('bg-red-500');
+                    errorText.textContent = data.error || 'Unknown error occurred';
+                    errorContainer.classList.remove('hidden');
+                    return; // Stop polling
+                }
+
+                // Continue polling
+                setTimeout(pollStatus, 1500);
+            } catch (error) {
+                console.error('Poll error:', error);
+                setTimeout(pollStatus, 3000); // Retry with longer delay on error
+            }
+        }
+
+        // Start polling
+        pollStatus();
+    </script>
+</body>
+</html>

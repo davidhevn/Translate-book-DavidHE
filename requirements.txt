@@ -1,0 +1,25 @@
+# Core dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+jinja2>=3.1.2
+
+# Task queue
+celery>=5.3.0
+redis>=5.0.0
+
+# Document processing
+pypdf>=3.17.0
+python-docx>=1.1.0
+reportlab>=4.0.0
+
+# Translation
+argostranslate>=1.9.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0
+
+# Utilities
+python-dotenv>=1.0.0

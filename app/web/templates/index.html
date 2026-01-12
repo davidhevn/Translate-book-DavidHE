@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Translator - EN to VI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-2xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">📚 Book Translator</h1>
+            <p class="text-gray-600">Translate PDF and DOCX documents from English to Vietnamese</p>
+        </header>
+
+        <main class="bg-white rounded-lg shadow-md p-6">
+            <form id="uploadForm" enctype="multipart/form-data" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Upload Document (PDF or DOCX)
+                    </label>
+                    <input 
+                        type="file" 
+                        name="file" 
+                        id="fileInput"
+                        accept=".pdf,.docx"
+                        required
+                        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    >
+                    <p class="mt-1 text-xs text-gray-500">Max file size: 50MB</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Source Language</label>
+                        <input 
+                            type="text" 
+                            value="English" 
+                            disabled 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500"
+                        >
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Target Language</label>
+                        <input 
+                            type="text" 
+                            value="Vietnamese" 
+                            disabled 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500"
+                        >
+                    </div>
+                </div>
+
+                <button 
+                    type="submit" 
+                    id="submitBtn"
+                    class="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 font-medium transition-colors"
+                >
+                    🚀 Translate Document
+                </button>
+            </form>
+
+            <div id="errorMessage" class="hidden mt-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-700"></div>
+        </main>
+
+        <footer class="text-center mt-8 text-gray-500 text-sm">
+            <p>Powered by Argos Translate</p>
+        </footer>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const errorDiv = document.getElementById('errorMessage');
+        const submitBtn = document.getElementById('submitBtn');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorDiv.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Uploading...';
+
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.job_id) {
+                    window.location.href = `/job/${data.job_id}`;
+                } else {
+                    throw new Error(data.detail || 'Upload failed');
+                }
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 Translate Document';
+            }
+        });
+    </script>
+</body>
+</html>
